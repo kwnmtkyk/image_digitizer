@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>画像のデジタル化シミュレータ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Interフォントの設定 */
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* グリッドコンテナの基本設定 */
+        .grid-container {
+            display: grid;
+            grid-gap: 1px; /* グリッド線の細さ */
+            background-color: #e5e7eb; /* グリッド線の色（グレー） */
+            border: 2px solid #374151;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 個々のグリッドセル */
+        .grid-cell {
+            background-color: white;
+            transition: background-color 0.1s;
+            cursor: pointer;
+        }
+
+        /* 黒いセル */
+        .grid-cell.black {
+            background-color: black;
+        }
+
+        /* 右側の標本化セルのスタイル */
+        .data-cell {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 0.75rem; /* 小さめのフォント */
+            font-weight: 600;
+            color: #1f2937;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-4 md:p-8">
+
+    <div class="max-w-4xl mx-auto">
+        <!-- タイトル -->
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">画像のデジタル化シミュレータ</h1>
+        <p class="text-center text-gray-600 mb-8">左のグリッドで描画し、デジタルデータ（0と1の数列）を生成してみましょう。</p>
+
+        <!-- 画像サイズ入力フォーム -->
+        <div class="p-4 bg-white shadow-lg rounded-xl mb-8">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">標本化サイズ（解像度）設定</h2>
+            <div class="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+                <div class="flex-1">
+                    <label for="width" class="block text-sm font-medium text-gray-700">横ピクセル数 (幅)</label>
+                    <input type="number" id="width" value="16" min="4" max="64" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div class="flex-1">
+                    <label for="height" class="block text-sm font-medium text-gray-700">縦ピクセル数 (高さ)</label>
+                    <input type="number" id="height" value="16" min="4" max="64" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div class="sm:pt-6">
+                    <button onclick="initGrid()" class="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-150">グリッド再作成</button>
+                </div>
+            </div>
+            <p id="size-info" class="mt-3 text-sm text-gray-500">現在のデータ総量: 0 ビット</p>
+        </div>
+
+        <!-- グリッド表示エリア -->
+        <div class="flex flex-col md:flex-row md:space-x-6">
+            
+            <!-- 左側: 描画ツール (標本化) -->
+            <div class="flex-1 mb-8 md:mb-0 p-4 bg-white shadow-lg rounded-xl">
+                <h3 class="text-lg font-medium text-gray-700 mb-3 text-center">描画グリッド（標本化）</h3>
+                <div id="drawing-grid-container" class="grid-container w-full aspect-square max-w-lg mx-auto">
+                    <!-- グリッドセルはJSで生成 -->
+                </div>
+                <p class="text-center text-sm text-gray-500 mt-2">クリックでセルを白/黒に塗ります</p>
+            </div>
+
+            <!-- 右側: データ表示 (標本化) -->
+            <div class="flex-1 p-4 bg-white shadow-lg rounded-xl">
+                <h3 class="text-lg font-medium text-gray-700 mb-3 text-center">標本化データ（白=0, 黒=1）</h3>
+                <div id="data-grid-container" class="grid-container w-full aspect-square max-w-lg mx-auto">
+                    <!-- グリッドセルはJSで生成 -->
+                </div>
+            </div>
+
+        </div>
+
+        <!-- 量子化ボタンと出力エリア -->
+        <div class="mt-8 p-4 bg-white shadow-lg rounded-xl">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">量子化（デジタルデータ生成）</h2>
+            <button id="quantize-button" class="w-full px-6 py-3 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700 transition duration-150 transform hover:scale-[1.01]">
+                量子化して0と1の数列を作成
+            </button>
+            
+            <div class="mt-4">
+                <label for="digital-output" class="block text-sm font-medium text-gray-700 mb-1">デジタルデータ出力 (0, 1の数列)</label>
+                <textarea id="digital-output" readonly rows="5" class="w-full p-3 bg-gray-100 border border-gray-300 rounded-md font-mono text-sm resize-none"></textarea>
+                <button onclick="copyToClipboard('digital-output')" class="mt-2 text-sm text-blue-600 hover:text-blue-800 transition duration-150">クリップボードにコピー</button>
+                <p id="output-info" class="mt-2 text-sm text-gray-500">データ長: 0 ビット</p>
+            </div>
+        </div>
+
+        <!-- 圧縮ボタンと出力エリア (新規) -->
+        <div class="mt-8 p-4 bg-white shadow-lg rounded-xl">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">圧縮 (ランレングス符号化)</h2>
+            <button id="compress-button" class="w-full px-6 py-3 bg-red-600 text-white font-bold rounded-lg shadow-md hover:bg-red-700 transition duration-150 transform hover:scale-[1.01]">
+                ランレングス法で圧縮を実行
+            </button>
+            
+            <div class="mt-4">
+                <label for="compressed-output" class="block text-sm font-medium text-gray-700 mb-1">圧縮データ出力 (RLE: (カウント)x(値))</label>
+                <textarea id="compressed-output" readonly rows="3" class="w-full p-3 bg-gray-100 border border-gray-300 rounded-md font-mono text-sm resize-none"></textarea>
+                
+                <p id="compression-ratio-info" class="mt-3 text-lg font-semibold text-gray-800">
+                    圧縮率: <span id="ratio-value" class="text-red-600">--</span>
+                </p>
+                <p id="compressed-length-info" class="mt-1 text-sm text-gray-500">
+                    圧縮後のデータ長 (理論値): 0 ビット
+                </p>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // グローバル変数
+        let gridData = []; // グリッドの状態を保持する2次元配列 (0:白, 1:黒)
+        let gridWidth = 16;
+        let gridHeight = 16;
+
+        const widthInput = document.getElementById('width');
+        const heightInput = document.getElementById('height');
+        const drawingGridContainer = document.getElementById('drawing-grid-container');
+        const dataGridContainer = document.getElementById('data-grid-container');
+        const quantizeButton = document.getElementById('quantize-button');
+        const compressButton = document.getElementById('compress-button'); // 新規追加
+        const digitalOutput = document.getElementById('digital-output');
+        const compressedOutput = document.getElementById('compressed-output'); // 新規追加
+        const sizeInfo = document.getElementById('size-info');
+        const outputInfo = document.getElementById('output-info');
+        const ratioValue = document.getElementById('ratio-value'); // 新規追加
+        const compressedLengthInfo = document.getElementById('compressed-length-info'); // 新規追加
+
+        /**
+         * 状態配列とDOMを初期化・再構築します。
+         */
+        function initGrid() {
+            // 入力値の取得とバリデーション
+            const newWidth = parseInt(widthInput.value, 10);
+            const newHeight = parseInt(heightInput.value, 10);
+
+            if (isNaN(newWidth) || newWidth < 4 || newWidth > 64 || 
+                isNaN(newHeight) || newHeight < 4 || newHeight > 64) {
+                console.error('無効なグリッドサイズです。4から64の間の値を入力してください。');
+                return;
+            }
+
+            gridWidth = newWidth;
+            gridHeight = newHeight;
+
+            // 状態配列の初期化
+            gridData = Array.from({ length: gridHeight }, () => Array(gridWidth).fill(0));
+
+            // DOMコンテナのクリア
+            drawingGridContainer.innerHTML = '';
+            dataGridContainer.innerHTML = '';
+            
+            // CSS Gridの設定
+            drawingGridContainer.style.gridTemplateColumns = `repeat(${gridWidth}, 1fr)`;
+            drawingGridContainer.style.gridTemplateRows = `repeat(${gridHeight}, 1fr)`;
+            dataGridContainer.style.gridTemplateColumns = `repeat(${gridWidth}, 1fr)`;
+            dataGridContainer.style.gridTemplateRows = `repeat(${gridHeight}, 1fr)`;
+
+            // グリッドセルの生成
+            for (let y = 0; y < gridHeight; y++) {
+                for (let x = 0; x < gridWidth; x++) {
+                    const drawCell = document.createElement('div');
+                    drawCell.className = 'grid-cell';
+                    drawCell.dataset.x = x;
+                    drawCell.dataset.y = y;
+                    drawCell.title = `(${x}, ${y})`;
+                    drawCell.addEventListener('click', () => toggleCell(x, y));
+                    drawingGridContainer.appendChild(drawCell);
+
+                    const dataCell = document.createElement('div');
+                    dataCell.className = 'data-cell';
+                    dataCell.id = `data-${x}-${y}`;
+                    dataCell.textContent = '0';
+                    dataGridContainer.appendChild(dataCell);
+                }
+            }
+            
+            // データ総量の更新 (非圧縮時のビット長)
+            const totalBits = gridWidth * gridHeight;
+            sizeInfo.textContent = `現在のデータ総量: ${totalBits} ビット (${gridWidth}x${gridHeight})`;
+
+            // 出力エリアをクリア
+            digitalOutput.value = '';
+            outputInfo.textContent = `データ長: 0 ビット`;
+            compressedOutput.value = ''; // 新規クリア
+            ratioValue.textContent = '--'; // 新規クリア
+            compressedLengthInfo.textContent = '圧縮後のデータ長 (理論値): 0 ビット'; // 新規クリア
+        }
+
+        /**
+         * セルの状態をトグルし、関連するDOMを更新します。
+         * @param {number} x - 横座標
+         * @param {number} y - 縦座標
+         */
+        function toggleCell(x, y) {
+            // 状態配列の更新 (0 -> 1, 1 -> 0)
+            gridData[y][x] = 1 - gridData[y][x]; 
+            const value = gridData[y][x];
+
+            // 描画グリッドのDOM更新
+            const drawCell = drawingGridContainer.querySelector(`[data-x="${x}"][data-y="${y}"]`);
+            if (value === 1) {
+                drawCell.classList.add('black');
+            } else {
+                drawCell.classList.remove('black');
+            }
+
+            // データグリッドのDOM更新（リアルタイム同期）
+            const dataCell = document.getElementById(`data-${x}-${y}`);
+            dataCell.textContent = value.toString();
+
+            // 描画のたびに圧縮情報をクリア
+            compressedOutput.value = '';
+            ratioValue.textContent = '--';
+            compressedLengthInfo.textContent = '圧縮後のデータ長 (理論値): 0 ビット';
+        }
+
+        /**
+         * 量子化処理を実行し、0と1の数列を出力します。
+         * @returns {string} 0と1の数列
+         */
+        function quantize() {
+            // 2次元配列を1次元の数列に変換（行優先）
+            const dataSequence = [];
+            for (let y = 0; y < gridHeight; y++) {
+                for (let x = 0; x < gridWidth; x++) {
+                    dataSequence.push(gridData[y][x]);
+                }
+            }
+            const outputString = dataSequence.join('');
+
+            // 出力エリアに表示
+            digitalOutput.value = outputString;
+            outputInfo.textContent = `データ長: ${outputString.length} ビット`;
+
+            // 圧縮情報をクリア
+            compressedOutput.value = ''; 
+            ratioValue.textContent = '--';
+            compressedLengthInfo.textContent = '圧縮後のデータ長 (理論値): 0 ビット';
+            
+            return outputString;
+        }
+        
+        /**
+         * 0/1のバイナリ文字列をランレングス符号化 (RLE) します。
+         * @param {string} binaryString - 0と1の数列
+         * @returns {{encodedString: string, compressedLength: number}} 圧縮結果
+         */
+        function runLengthEncode(binaryString) {
+            if (!binaryString) return { encodedString: '', compressedLength: 0 };
+
+            let encoded = [];
+            let count = 1;
+            let currentChar = binaryString[0];
+
+            for (let i = 1; i < binaryString.length; i++) {
+                if (binaryString[i] === currentChar) {
+                    count++;
+                } else {
+                    // (カウント)x(値) の形式で格納
+                    encoded.push(`${count}x${currentChar}`);
+                    currentChar = binaryString[i];
+                    count = 1;
+                }
+            }
+            // 最後のランを格納
+            encoded.push(`${count}x${currentChar}`);
+            
+            const encodedString = encoded.join(', ');
+            
+            // 圧縮後のビット長の理論値計算
+            // ランレングス符号化では、各カウント値を格納するために必要なビット数を用いる。
+            // 最大のカウント値は gridWidth * gridHeight (最大 4096)
+            const maxRunLength = gridWidth * gridHeight;
+            // 必要なビット数 (例: 4096を格納するには log2(4096) = 12ビットが必要)
+            const bitsPerCount = Math.ceil(Math.log2(maxRunLength));
+            
+            // セグメント数 (ランの数)
+            const segmentCount = encoded.length;
+            
+            // 圧縮後のビット長 = セグメント数 × カウント値格納に必要なビット数
+            const compressedLength = segmentCount * bitsPerCount;
+
+            return { encodedString, compressedLength };
+        }
+
+        /**
+         * 圧縮処理を実行し、結果を出力します。
+         */
+        function compress() {
+            const binaryData = quantize(); // まず量子化を実行して最新のデータを取得
+            if (binaryData.length === 0) {
+                compressedOutput.value = 'データがありません。先にグリッドに描画してください。';
+                ratioValue.textContent = '--';
+                compressedLengthInfo.textContent = '圧縮後のデータ長 (理論値): 0 ビット';
+                return;
+            }
+
+            const { encodedString, compressedLength } = runLengthEncode(binaryData);
+            const originalLength = binaryData.length;
+
+            // 圧縮率の計算: (元データ長 / 圧縮データ長)
+            // 圧縮率が1.0未満（データが増えた場合）もあり得ます。
+            let ratio = 0;
+            if (compressedLength > 0) {
+                ratio = originalLength / compressedLength;
+            }
+            const ratioText = ratio.toFixed(2) + ' 倍';
+
+            // 出力エリアに表示
+            compressedOutput.value = encodedString;
+            compressedLengthInfo.textContent = `圧縮後のデータ長 (理論値): ${compressedLength} ビット`;
+            ratioValue.textContent = ratioText;
+
+            if (ratio < 1) {
+                ratioValue.classList.add('text-blue-600');
+                ratioValue.classList.remove('text-red-600');
+            } else {
+                ratioValue.classList.add('text-red-600');
+                ratioValue.classList.remove('text-blue-600');
+            }
+        }
+
+        /**
+         * 指定されたIDのテキストエリアの内容をクリップボードにコピーします。
+         * @param {string} elementId - テキストエリアのID
+         */
+        function copyToClipboard(elementId) {
+            const textarea = document.getElementById(elementId);
+            textarea.select();
+            textarea.setSelectionRange(0, 99999); /* For mobile devices */
+            try {
+                document.execCommand('copy');
+                // 成功メッセージを表示 (一時的なスタイル変更)
+                const targetButton = (elementId === 'digital-output') ? quantizeButton : compressButton;
+                const originalText = targetButton.textContent;
+                targetButton.textContent = 'コピーしました！';
+                targetButton.classList.remove('bg-green-600', 'bg-red-600', 'hover:bg-green-700', 'hover:bg-red-700');
+                targetButton.classList.add('bg-blue-500');
+
+                setTimeout(() => {
+                    targetButton.textContent = originalText;
+                    if (elementId === 'digital-output') {
+                        targetButton.classList.add('bg-green-600', 'hover:bg-green-700');
+                    } else {
+                        targetButton.classList.add('bg-red-600', 'hover:bg-red-700');
+                    }
+                    targetButton.classList.remove('bg-blue-500');
+                }, 1500);
+
+            } catch (err) {
+                console.error('クリップボードへのコピーに失敗しました', err);
+            }
+        }
+
+        // イベントリスナーの設定
+        widthInput.addEventListener('change', initGrid);
+        heightInput.addEventListener('change', initGrid);
+        quantizeButton.addEventListener('click', quantize);
+        compressButton.addEventListener('click', compress); // 新規リスナー
+
+        // 初期化
+        window.onload = () => {
+            initGrid();
+        };
+
+    </script>
+</body>
+</html>
