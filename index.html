@@ -322,7 +322,7 @@
             // 圧縮率が1.0未満（データが増えた場合）もあり得ます。
             let ratio = 0;
             if (compressedLength > 0) {
-                ratio = originalLength / compressedLength;
+                ratio = compressedLength / originalLength * 100;
             }
             const ratioText = ratio.toFixed(2) + ' 倍';
 
